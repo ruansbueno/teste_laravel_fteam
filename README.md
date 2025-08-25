@@ -1,6 +1,6 @@
 # E-commerce Integration API
 
-Uma API Laravel para integração com a Fake Store API, proporcionando sincronização de produtos, catálogo com filtros avançados e estatísticas detalhadas.
+Uma API em **Laravel 12** para integração com a **Fake Store API**, permitindo sincronização de produtos, categorias, catálogo com filtros avançados e estatísticas detalhadas.
 
 ---
 
@@ -26,23 +26,25 @@ Uma API Laravel para integração com a Fake Store API, proporcionando sincroniz
 - **Sincronização de Produtos**: Importação de produtos e categorias da Fake Store API  
 - **Catálogo com Filtros**: Listagem com paginação, filtros e ordenação  
 - **Estatísticas**: Dados agregados sobre produtos e categorias  
+- **Swagger UI**: Documentação da API em `/api/documentation`  
 - **Resiliência**: Tratamento robusto de erros e timeouts  
 
 ---
 
 ## 🛠 Tecnologias Utilizadas
-- Laravel 10+  
-- PHP 8.1+  
-- MySQL/PostgreSQL  
+- Laravel 12  
+- PHP 8.2+  
+- MySQL 8+  
 - Guzzle HTTP Client  
 - PHPUnit para testes  
+- L5 Swagger  
 
 ---
 
 ## 📋 Pré-requisitos
-- PHP 8.1 ou superior  
+- PHP 8.2 ou superior  
 - Composer  
-- MySQL 5.7+ ou PostgreSQL 9.6+  
+- MySQL 8 ou superior  
 - Git  
 
 ---
@@ -53,302 +55,208 @@ Clone o repositório:
 ```bash
 git clone https://github.com/ruansbueno/teste_laravel_fteam.git
 cd teste_laravel_fteam
+```
+
 Instale as dependências:
 
-bash
-Copiar
-Editar
+```bash
 composer install
+```
+
 Configure o ambiente:
 
-bash
-Copiar
-Editar
+```bash
 cp .env.example .env
 php artisan key:generate
-Configure o banco de dados no arquivo .env:
+```
 
-dotenv
-Copiar
-Editar
+Edite o arquivo .env com suas credenciais MySQL:
+
+```bash
 DB_CONNECTION=mysql
 DB_HOST=127.0.0.1
 DB_PORT=3306
-DB_DATABASE=laravel
+DB_DATABASE=teste_laravel_fteam
 DB_USERNAME=root
 DB_PASSWORD=
-Execute as migrações:
+```
 
-bash
-Copiar
-Editar
+Execute as migrações:
+```bash
 php artisan migrate
+```
+
 Inicie o servidor:
 
-bash
-Copiar
-Editar
+```bash
 php artisan serve
-O servidor estará disponível em http://localhost:8000
+```
 
-🔌 Variáveis de Ambiente
-Variável	Descrição	Exemplo
-DB_CONNECTION	Tipo de banco de dados	mysql
-DB_HOST	Host do banco de dados	127.0.0.1
-DB_PORT	Porta do banco de dados	3306
-DB_DATABASE	Nome do banco de dados	laravel
-DB_USERNAME	Usuário do banco de dados	root
-DB_PASSWORD	Senha do banco de dados	secret
-FAKE_STORE_API_URL	URL da Fake Store API	https://fakestoreapi.com
+## Variáveis de Ambiente:
 
-🗃 Estrutura do Banco de Dados
-Tabela: categories
-Coluna	Tipo	Descrição
-id	bigint unsigned	Chave primária
-name	varchar(255)	Nome da categoria
-created_at	timestamp	Data de criação
-updated_at	timestamp	Data de atualização
+| Variável                  | Descrição                 | Exemplo                                              |
+| ------------------------- | ------------------------- | ---------------------------------------------------- |
+| DB\_CONNECTION            | Tipo de banco de dados    | mysql                                                |
+| DB\_HOST                  | Host do banco de dados    | 127.0.0.1                                            |
+| DB\_PORT                  | Porta do banco de dados   | 3306                                                 |
+| DB\_DATABASE              | Nome do banco de dados    | teste\_laravel\_fteam                                |
+| DB\_USERNAME              | Usuário do banco de dados | root                                                 |
+| DB\_PASSWORD              | Senha do banco de dados   | secret                                               |
+| FAKESTORE\_BASE\_URL      | URL da Fake Store API     | [https://fakestoreapi.com](https://fakestoreapi.com) |
+| FAKESTORE\_TIMEOUT        | Timeout em segundos       | 5                                                    |
+| FAKESTORE\_RETRIES        | Tentativas de retry       | 3                                                    |
+| FAKESTORE\_RETRY\_BACKOFF | Tempo de backoff em ms    | 200                                                  |
 
-Tabela: products
-Coluna	Tipo	Descrição
-id	bigint unsigned	Chave primária
-external_id	int	ID externo da Fake Store API
-title	varchar(255)	Título do produto
-price	decimal(10,2)	Preço do produto
-description	text	Descrição do produto
-category_id	bigint unsigned	Chave estrangeira para categories
-image	varchar(255)	URL da imagem
-rating_rate	decimal(3,2)	Avaliação do produto
-rating_count	int	Contagem de avaliações
-created_at	timestamp	Data de criação
-updated_at	timestamp	Data de atualização
 
-🌐 Endpoints da API
-🔐 Middleware de Integração
-Todos os endpoints (exceto sincronização) requerem o header:
+## Estrutura do Banco de Dados
 
-arduino
-Copiar
-Editar
+Tabela Categories
+| Coluna      | Tipo            | Descrição           |
+| ----------- | --------------- | ------------------- |
+| id          | bigint unsigned | Chave primária      |
+| name        | varchar(255)    | Nome da categoria   |
+| created\_at | timestamp       | Data de criação     |
+| updated\_at | timestamp       | Data de atualização |
+
+Tabela Products
+| Coluna       | Tipo            | Descrição                    |
+| ------------ | --------------- | ---------------------------- |
+| id           | bigint unsigned | Chave primária               |
+| external\_id | int             | ID externo da Fake Store API |
+| title        | varchar(255)    | Título do produto            |
+| price        | decimal(10,2)   | Preço do produto             |
+| description  | text            | Descrição do produto         |
+| category\_id | bigint unsigned | FK para categories           |
+| image\_url   | varchar(255)    | URL da imagem                |
+| created\_at  | timestamp       | Data de criação              |
+| updated\_at  | timestamp       | Data de atualização          |
+
+## Endpoints da API
+Middleware de Integração
+
+Todos os endpoints requerem o header:
+
+```bash
 X-Client-Id: seu-client-id
-1. Sincronização de Produtos
-POST /integrations/fakestore/sync
+```
 
-Sincroniza produtos e categorias com a Fake Store API.
+1. Sincronização de Produtos
+
+POST /api/integrations/fakestore/sync
 
 Resposta de Sucesso:
 
-json
-Copiar
-Editar
+```bash
 {
-  "message": "Synchronization completed successfully",
-  "products_synced": 20,
-  "categories_synced": 4
+  "message": "sync finished",
+  "imported": 20,
+  "updated": 5,
+  "skipped": 2,
+  "errors": []
 }
-2. Listagem de Produtos
-GET /products
+```
 
-Parâmetros opcionais:
+2. Listagem de Categorias
 
-category
-
-min_price
-
-max_price
-
-search
-
-sort_by (price, title, created_at)
-
-sort_order (asc, desc)
-
-per_page (default: 15)
-
-Exemplo:
-
-sql
-Copiar
-Editar
-GET /products?category=electronics&min_price=10&max_price=100&search=phone&sort_by=price&sort_order=desc&per_page=20
-Resposta:
-
-json
-Copiar
-Editar
+GET /api/categories
+```bash
 {
-  "data": [...],
-  "links": {...},
-  "meta": {...}
+  "version": 2,
+  "categories": [
+    {"id": 1, "name": "electronics", "products_count": 6},
+    {"id": 2, "name": "jewelery", "products_count": 4}
+  ]
 }
-3. Buscar Produto por ID
-GET /products/{id}
+```
 
-Resposta:
+3. Listagem de Produtos
 
-json
-Copiar
-Editar
-{
-  "id": 1,
-  "external_id": 1,
-  "title": "Product Name",
-  "price": 109.95,
-  "description": "Product description...",
-  "category_id": 1,
-  "image": "https://fakestoreapi.com/img/81fPKd-2AYL._AC_SL1500_.jpg",
-  "rating_rate": 3.9,
-  "rating_count": 120,
-  "category": {
-    "id": 1,
-    "name": "electronics"
-  }
-}
+GET /api/products
+
+Parâmetros suportados:
+
+- category_id
+
+- q (busca texto em título/descrição)
+
+- min_price
+
+- max_price
+
+- sort (price_asc, price_desc, title_asc, title_desc, created_asc, created_desc)
+
+- per_page, page
+
 4. Estatísticas
-GET /statistics
 
-Resposta:
-
-json
-Copiar
-Editar
+GET /api/stats
+```bash
 {
+  "version": 2,
   "total_products": 20,
-  "products_by_category": [
-    {"category_name": "electronics", "count": 6},
-    {"category_name": "jewelery", "count": 4},
-    {"category_name": "men's clothing", "count": 4},
-    {"category_name": "women's clothing", "count": 6}
-  ],
-  "average_price": 114.95
+  "total_categories": 4,
+  "min_price": 9.99,
+  "max_price": 999.00,
+  "avg_price": 114.95
 }
-🔄 Executando a Sincronização
+```
+
+## Documentação Swagger
+
+A documentação interativa está disponível em:
+
+- http://127.0.0.1:8000/api/documentation
+
+## Executando a Sincronização
+
 Via API:
-bash
-Copiar
-Editar
-curl -X POST http://localhost:8000/integrations/fakestore/sync \
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/integrations/fakestore/sync \
   -H "Content-Type: application/json" \
-  -H "X-Client-Id: your-client-id-here"
-Via Comando Artisan:
-bash
-Copiar
-Editar
-php artisan products:sync
-🧪 Testando os Endpoints
-Testar Sincronização
+  -H "X-Client-Id: your-client-id"
+```
 
-bash
-Copiar
-Editar
-curl -X POST http://localhost:8000/integrations/fakestore/sync \
-  -H "X-Client-Id: test-client"
-Testar Listagem de Produtos
+Via comando Artisan:
 
-bash
-Copiar
-Editar
-curl -X GET "http://localhost:8000/products?category=electronics&min_price=10&max_price=1000" \
-  -H "X-Client-Id: test-client"
-Testar Busca de Produto
+```bash
+php artisan sync:fakestore --now
+```
 
-bash
-Copiar
-Editar
-curl -X GET http://localhost:8000/products/1 \
-  -H "X-Client-Id: test-client"
-Testar Estatísticas
+## Decisões de Modelagem
 
-bash
-Copiar
-Editar
-curl -X GET http://localhost:8000/statistics \
-  -H "X-Client-Id: test-client"
-🧪 Testes
-Rodar todos os testes:
+- external_id garante unicidade dos produtos importados
 
-bash
-Copiar
-Editar
-php artisan test
-Testes Implementados
-ProductSyncTest: Testa a sincronização de produtos
+- Relação 1:N entre categorias e produtos
 
-ProductControllerTest: Testa os endpoints de produtos
+- Sincronização feita via updateOrCreate
 
-StatisticsControllerTest: Testa o endpoint de estatísticas
+- Cache de versão (catalog_version, stats_version) para invalidação eficiente
 
-IntegrationMiddlewareTest: Testa o middleware de integração
+## Índices do Banco de Dados
 
-🏗 Decisões de Modelagem
-Estrutura de Dados
+- products_external_id_unique (UNIQUE)
 
-Produtos têm external_id único para evitar duplicatas
+- products_category_id_index
 
-Relação 1:N entre categorias e produtos
+- products_price_index
 
-Campos rating_rate e rating_count separados
+- products_title_index
 
-Estratégia de Sincronização
+- categories_name_unique (UNIQUE)
 
-updateOrCreate para evitar duplicação
+## Estratégia de Tratamento de Erros
 
-Sincronização item a item para evitar falhas em lote
+- Middleware: valida X-Client-Id e retorna 400 se ausente
 
-Log de erros sem interromper a execução
+- Fake Store API: retry automático, timeout configurado, erros logados
 
-Design da API
+- Sincronização: erros em itens individuais não interrompem o processo
 
-Paginação configurável
+- Respostas de Erro padronizadas:
 
-Filtros flexíveis
-
-Ordenação dinâmica
-
-📊 Índices do Banco de Dados
-products
-
-products_external_id_unique (UNIQUE)
-
-products_category_id_index
-
-products_price_index
-
-products_title_index
-
-categories
-
-categories_name_unique (UNIQUE)
-
-🛡 Estratégia de Tratamento de Erros
-Middleware de Integração
-
-Valida header X-Client-Id
-
-Retorna 400 se ausente
-
-Loga todas as requisições
-
-API Externa
-
-Timeout 30s
-
-Retry com backoff
-
-Trata erros HTTP
-
-Sincronização
-
-Continua mesmo com falhas individuais
-
-Registra erros em log
-
-Respostas de Erro
-
-json
-Copiar
-Editar
+```bash
 {
-  "error": "Mensagem descritiva do erro",
-  "code": "Código do erro"
+  "error": "Mensagem descritiva do erro"
 }
+```
