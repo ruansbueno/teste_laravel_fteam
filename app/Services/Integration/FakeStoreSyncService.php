@@ -1,122 +1,138 @@
 <?php
 
-namespace App\Services;
+namespace App\Services\Integration;
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
-use App\Models\Product;
 use App\Models\Category;
+use App\Models\Product;
 
-class FakeStoreService
+class FakeStoreSyncService
 {
-    private $baseUrl = 'https://fakestoreapi.com';
-
-    public function syncProducts()
+    public function syncAll(): array
     {
-        try {
-            $response = Http::timeout(30)
-                ->retry(3, 100)
-                ->get("{$this->baseUrl}/products");
+        $imported = 0;
+        $updated  = 0;
+        $skipped  = 0;
+        $errors   = [];
 
-            if ($response->failed()) {
-                Log::error('Failed to fetch products from FakeStore API', [
-                    'status' => $response->status(),
-                    'body' => $response->body()
-                ]);
-                return false;
+        try {
+            $categories = $this->fetchCategories();
+        } catch (\Throwable $e) {
+            return [
+                'imported' => 0,
+                'updated'  => 0,
+                'skipped'  => 0,
+                'errors'   => ['categories' => $e->getMessage()],
+            ];
+        }
+
+        foreach ($categories as $catName) {
+            Category::firstOrCreate(['name' => $catName]);
+        }
+
+        try {
+            $products = $this->fetchProducts();
+        } catch (\Throwable $e) {
+            return [
+                'imported' => 0,
+                'updated'  => 0,
+                'skipped'  => 0,
+                'errors'   => ['products' => $e->getMessage()],
+            ];
+        }
+
+        foreach ($products as $p) {
+            if (!isset($p['id'], $p['title'], $p['price'], $p['description'], $p['category'], $p['image'])) {
+                $skipped++;
+                $errors[] = 'invalid product payload';
+                continue;
             }
 
-            $products = $response->json();
-            $syncedCount = 0;
-            $errorCount = 0;
+            $category = Category::firstOrCreate(['name' => (string) $p['category']]);
 
-            foreach ($products as $productData) {
-                try {
-                    // Primeiro sincroniza a categoria
-                    $category = $this->syncCategory($productData['category']);
-                    
-                    // Sincroniza o produto
-                    Product::updateOrCreate(
-                        ['external_id' => $productData['id']],
-                        [
-                            'title' => $productData['title'],
-                            'price' => $productData['price'],
-                            'description' => $productData['description'],
-                            'category_id' => $category->id,
-                            'image' => $productData['image'],
-                            'rating_rate' => $productData['rating']['rate'] ?? null,
-                            'rating_count' => $productData['rating']['count'] ?? null,
-                        ]
-                    );
-                    
-                    $syncedCount++;
-                    
-                } catch (\Exception $e) {
-                    $errorCount++;
-                    Log::error('Error syncing product', [
-                        'external_id' => $productData['id'],
-                        'error' => $e->getMessage()
-                    ]);
-                    continue; // Continua com próximo produto
+            $payload = [
+                'title'       => (string) $p['title'],
+                'price'       => (float) $p['price'],
+                'description' => (string) $p['description'],
+                'category_id' => $category->id,
+                'image_url'   => (string) $p['image'],
+            ];
+
+            $existing = Product::where('external_id', (int) $p['id'])->first();
+
+            if ($existing) {
+                $changed = false;
+                foreach ($payload as $k => $v) {
+                    if ($existing->{$k} !== $v) {
+                        $changed = true;
+                        break;
+                    }
                 }
+                if ($changed) {
+                    $existing->update($payload);
+                    $updated++;
+                } else {
+                    $skipped++;
+                }
+            } else {
+                Product::create(array_merge(
+                    ['external_id' => (int) $p['id']],
+                    $payload
+                ));
+                $imported++;
             }
-
-            Log::info('Products synchronization completed', [
-                'synced' => $syncedCount,
-                'errors' => $errorCount
-            ]);
-
-            return true;
-
-        } catch (\Exception $e) {
-            Log::error('FakeStore API synchronization failed', [
-                'error' => $e->getMessage()
-            ]);
-            return false;
         }
+
+        return [
+            'imported' => $imported,
+            'updated'  => $updated,
+            'skipped'  => $skipped,
+            'errors'   => $errors,
+        ];
     }
 
-    private function syncCategory($categoryName)
+    protected function fetchCategories(): array
     {
-        return Category::firstOrCreate(
-            ['name' => $categoryName],
-            ['name' => $categoryName]
-        );
-    }
+        $base = rtrim(config('integrations.fakestore.base_url', config('services.fakestore.base_url', 'https://fakestoreapi.com')), '/');
+        $timeout = (int) env('FAKESTORE_TIMEOUT', 5);
+        $retries = (int) env('FAKESTORE_RETRIES', 3);
+        $backoff = (int) env('FAKESTORE_RETRY_BACKOFF', 200);
 
-    public function syncCategories()
-    {
-        try {
-            $response = Http::timeout(30)
-                ->retry(3, 100)
-                ->get("{$this->baseUrl}/products/categories");
+        $resp = Http::retry($retries, $backoff)->timeout($timeout)->get($base.'/products/categories');
 
-            if ($response->failed()) {
-                throw new \Exception("Failed to fetch categories: " . $response->status());
-            }
-
-            $categories = $response->json();
-            $syncedCount = 0;
-
-            foreach ($categories as $categoryName) {
-                Category::firstOrCreate(
-                    ['name' => $categoryName],
-                    ['name' => $categoryName]
-                );
-                $syncedCount++;
-            }
-
-            Log::info('Categories synchronization completed', [
-                'synced' => $syncedCount
-            ]);
-
-            return true;
-
-        } catch (\Exception $e) {
-            Log::error('Categories synchronization failed', [
-                'error' => $e->getMessage()
-            ]);
-            return false;
+        if ($resp->failed()) {
+            throw new \RuntimeException('categories request failed');
         }
+
+        $data = $resp->json();
+
+        if (!is_array($data)) {
+            throw new \RuntimeException('invalid categories response');
+        }
+
+        return array_values(array_filter(array_map('strval', $data)));
+        }
+
+    protected function fetchProducts(): array
+    {
+        $base = rtrim(config('integrations.fakestore.base_url', config('services.fakestore.base_url', 'https://fakestoreapi.com')), '/');
+        $timeout = (int) env('FAKESTORE_TIMEOUT', 5);
+        $retries = (int) env('FAKESTORE_RETRIES', 3);
+        $backoff = (int) env('FAKESTORE_RETRY_BACKOFF', 200);
+
+        $resp = Http::retry($retries, $backoff)->timeout($timeout)->get($base.'/products');
+
+        if ($resp->failed()) {
+            throw new \RuntimeException('products request failed');
+        }
+
+        $data = $resp->json();
+
+        if (!is_array($data)) {
+            throw new \RuntimeException('invalid products response');
+        }
+
+        return $data;
     }
 }

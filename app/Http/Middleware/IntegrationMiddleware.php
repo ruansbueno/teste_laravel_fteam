@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -11,35 +12,21 @@ class IntegrationMiddleware
 {
     public function handle(Request $request, Closure $next): Response
     {
-        // Validar header X-Client-Id
-        if (!$request->hasHeader('X-Client-Id')) {
+        $clientId = $request->header('X-Client-Id');
+        if (!$clientId) {
             return response()->json(['error' => 'X-Client-Id header is required'], 400);
         }
 
-        $clientId = $request->header('X-Client-Id');
-        
-        // Log de entrada
-        Log::info('Request received', [
+        $requestId = (string) Str::uuid();
+        Log::withContext([
+            'request_id' => $requestId,
             'client_id' => $clientId,
-            'route' => $request->route()?->uri(),
+            'path' => $request->path(),
             'method' => $request->method(),
-            'url' => $request->fullUrl(),
         ]);
-
-        $startTime = microtime(true);
 
         $response = $next($request);
-
-        $duration = round((microtime(true) - $startTime) * 1000, 2); // ms
-
-        // Log de saída
-        Log::info('Request completed', [
-            'client_id' => $clientId,
-            'route' => $request->route()?->uri(),
-            'status' => $response->getStatusCode(),
-            'duration_ms' => $duration,
-        ]);
-
+        $response->headers->set('X-Request-Id', $requestId);
         return $response;
     }
 }

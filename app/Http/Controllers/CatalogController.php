@@ -6,7 +6,8 @@ use App\Models\Category;
 use App\Models\Product;
 use Illuminate\Http\Request;
 use App\Services\CatalogVersion;
-
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 /**
  * @OA\Info(title="FTeam Catalog API", version="1.0.0")
@@ -45,20 +46,25 @@ class CatalogController extends Controller
      *   )
      * )
      */
-    public function categories(Request $request)
-    {
-        $cats = Category::query()
-            ->withCount('products')
-            ->orderBy('name')
-            ->get(['id', 'name']);
+    public function categories(Request $request){
+        $version = $this->version->get();
+
+        $payload = Cache::remember("categories:{$version}", 600, function () {
+            $cats = \App\Models\Category::query()
+                ->withCount('products')
+                ->orderBy('name')
+                ->get(['id', 'name']);
+
+            return $cats->map(fn ($c) => [
+                'id' => $c->id,
+                'name' => $c->name,
+                'products_count' => $c->products_count,
+            ])->all();
+        });
 
         return response()->json([
-            'version'    => $this->version->get(),
-            'categories' => $cats->map(fn ($c) => [
-                'id'             => $c->id,
-                'name'           => $c->name,
-                'products_count' => $c->products_count,
-            ]),
+            'version' => $this->version->getCatalog(),
+            'categories' => $payload,
         ]);
     }
 
@@ -111,8 +117,7 @@ class CatalogController extends Controller
      *   )
      * )
      */
-    public function products(Request $request)
-    {
+    public function products(Request $request) {
         $q = Product::query()->with('category');
 
         if ($request->filled('category_id')) {
@@ -149,7 +154,7 @@ class CatalogController extends Controller
         $pag = $q->paginate($perPage, ['*'], 'page', $page);
 
         return response()->json([
-            'version'    => $this->version->get(),
+            'version' => $this->version->getCatalog(),
             'pagination' => [
                 'total'        => $pag->total(),
                 'per_page'     => $pag->perPage(),
@@ -189,22 +194,30 @@ class CatalogController extends Controller
      *   )
      * )
      */
-    public function stats(Request $request)
-    {
-        $totalProducts   = Product::count();
-        $totalCategories = Category::count();
+    public function stats(Request $request) {
+        $version = $this->version->get();
 
-        $min = Product::min('price');
-        $max = Product::max('price');
-        $avg = Product::avg('price');
+        $data = Cache::remember("stats:{$version}", 600, function () {
+            $agg = DB::selectOne('select count(*) as total_products, min(price) as min_price, max(price) as max_price, round(avg(price),2) as avg_price from products');
+            $totalCategories = DB::selectOne('select count(*) as total_categories from categories');
+
+            return [
+                'total_products' => (int) ($agg->total_products ?? 0),
+                'total_categories' => (int) ($totalCategories->total_categories ?? 0),
+                'min_price' => isset($agg->min_price) ? (float) $agg->min_price : null,
+                'max_price' => isset($agg->max_price) ? (float) $agg->max_price : null,
+                'avg_price' => isset($agg->avg_price) ? (float) $agg->avg_price : null,
+            ];
+        });
 
         return response()->json([
-            'version'          => $this->version->get(),
-            'total_products'   => (int) $totalProducts,
-            'total_categories' => (int) $totalCategories,
-            'min_price'        => $min !== null ? (float) $min : null,
-            'max_price'        => $max !== null ? (float) $max : null,
-            'avg_price'        => $avg !== null ? (float) round($avg, 2) : null,
+            'version' => $this->version->getStats(),
+            'total_products' => $data['total_products'],
+            'total_categories' => $data['total_categories'],
+            'min_price' => $data['min_price'],
+            'max_price' => $data['max_price'],
+            'avg_price' => $data['avg_price'],
         ]);
     }
+
 }

@@ -1,18 +1,13 @@
 <?php
 
-use App\Http\Controllers\IntegrationController;
-use App\Http\Controllers\ProductController;
-use App\Http\Controllers\StatisticsController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\CatalogController;
+use App\Http\Controllers\SyncController;
+use App\Http\Middleware\IntegrationMiddleware;
 
-Route::middleware(['integration'])->group(function () {
-    // Catálogo
-    Route::get('/products', [ProductController::class, 'index']);
-    Route::get('/products/{id}', [ProductController::class, 'show']);
-    
-    // Estatísticas
-    Route::get('/statistics', [StatisticsController::class, 'index']);
+Route::middleware([IntegrationMiddleware::class])->group(function () {
+    Route::get('/categories', [CatalogController::class, 'categories']);
+    Route::get('/products', [CatalogController::class, 'products']);
+    Route::get('/stats', [CatalogController::class, 'stats']);
+    Route::post('/integrations/fakestore/sync', [SyncController::class, 'sync']);
 });
-
-// Sincronização (sem middleware para facilitar execução via comando/API)
-Route::post('/integrations/fakestore/sync', [IntegrationController::class, 'sync']);

@@ -9,12 +9,10 @@ class StatisticsController extends Controller
 {
     public function index()
     {
-        // Total de produtos - SQL puro
         $totalProducts = DB::selectOne("
             SELECT COUNT(*) as total FROM products
         ")->total;
 
-        // Total por categoria - SQL puro
         $productsByCategory = DB::select("
             SELECT c.name as category_name, COUNT(p.id) as count
             FROM categories c
@@ -23,12 +21,10 @@ class StatisticsController extends Controller
             ORDER BY count DESC
         ");
 
-        // Preço médio geral
         $averagePrice = DB::selectOne("
             SELECT AVG(price) as average FROM products
         ")->average;
 
-        // Top 5 produtos mais caros
         $mostExpensiveProducts = DB::select("
             SELECT title, price 
             FROM products 
