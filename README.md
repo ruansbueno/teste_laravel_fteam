@@ -1,4 +1,4 @@
-# E-commerce Integration API
+# Teste Fteam - Dev JR PHP/Laravel
 
 Uma API em **Laravel 12** para integração com a **Fake Store API**, permitindo sincronização de produtos, categorias, catálogo com filtros avançados e estatísticas detalhadas.
 
